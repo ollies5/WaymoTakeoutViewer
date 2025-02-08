@@ -107,17 +107,15 @@
     const zipFileInput = document.getElementById('zipFileInput');
     const tripList = document.getElementById('tripList');
 
-    // Convert a location object with { lat_lng: {lat_e7, lng_e7} } into [lat, lng]
+    // Given a location object with a lat_lng property (in E7), return [lat, lng] in degrees.
     function getLatLng(loc) {
       if (loc && loc.lat_lng && typeof loc.lat_lng.lat_e7 === 'number' && typeof loc.lat_lng.lng_e7 === 'number') {
-        return [ loc.lat_lng.lat_e7 / 1e7, loc.lat_lng.lng_e7 / 1e7 ];
+        return [loc.lat_lng.lat_e7 / 1e7, loc.lat_lng.lng_e7 / 1e7];
       }
       return null;
     }
 
-    // Get a text description for a location. If a description name exists, return it;
-    // else, if location_detail array exists, join its elements;
-    // else return "Unknown address".
+    // Given an object that contains a description (e.g. desired_location or adjusted_location), return its text.
     function getLocationText(loc) {
       if (loc && loc.description) {
         if (loc.description.name && loc.description.name.trim() !== "") {
@@ -129,7 +127,13 @@
       return "Unknown address";
     }
 
-    // Format a cost object (with either amount or units+nanos)
+    // For a waypoint (which has adjusted_location and desired_location), return the best location text.
+    function getStopText(waypoint) {
+      const loc = waypoint.adjusted_location || waypoint.desired_location || {};
+      return getLocationText(loc);
+    }
+
+    // Helper to format cost objects.
     function formatCost(costObj) {
       if (!costObj) return "N/A";
       if (costObj.amount !== undefined) {
@@ -170,7 +174,7 @@
 
         tripList.innerHTML = '';
 
-        // Custom marker icons: green for start, red for end.
+        // Define custom marker icons.
         const greenIcon = new L.Icon({
           iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
           shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
@@ -181,6 +185,14 @@
         });
         const redIcon = new L.Icon({
           iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+          iconSize: [25, 41],
+          iconAnchor: [12, 41],
+          popupAnchor: [1, -34],
+          shadowSize: [41, 41]
+        });
+        const blueIcon = new L.Icon({
+          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
           shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
           iconSize: [25, 41],
           iconAnchor: [12, 41],
@@ -201,10 +213,10 @@
           const li = document.createElement('li');
           li.className = 'trip-item';
 
-          // Extract basic summary info from derived.trip_summary
+          // Use derived.trip_summary for basic info.
           const summary = tripData.derived?.trip_summary || {};
           const basics = summary.basics || {};
-          const created = basics.creation_time ? new Date(parseInt(basics.creation_time.seconds) * 1000).toLocaleString() : "Unknown address";
+          const created = basics.creation_time ? new Date(parseInt(basics.creation_time.seconds) * 1000).toLocaleString() : "Unknown";
           const duration = basics.duration ? (basics.duration.seconds / 60).toFixed(2) + " mins" : "N/A";
           const distance = basics.distance_m ? (basics.distance_m * 0.000621371).toFixed(2) + " miles" : "N/A";
           const state = summary.state || "N/A";
@@ -212,23 +224,28 @@
 
           li.innerHTML = `<strong>${tripFile.path}</strong><div class="summary">${summaryText}</div>`;
 
-          // For multi-stop trips, use the first leg's pickup as start and last leg's dropoff as end.
-          let startLocation = {};
-          let endLocation = {};
-          if (summary.trip_leg_summaries && summary.trip_leg_summaries.length > 0) {
-            startLocation = summary.trip_leg_summaries[0].pickup?.adjusted_location 
-                            || summary.trip_leg_summaries[0].pickup?.desired_location || {};
-            endLocation = summary.trip_leg_summaries[summary.trip_leg_summaries.length - 1].dropoff?.adjusted_location 
-                          || summary.trip_leg_summaries[summary.trip_leg_summaries.length - 1].dropoff?.desired_location || {};
-          } else if (summary.stopped_at && summary.stopped_at.length >= 2) {
-            startLocation = summary.stopped_at[0].adjusted_location || summary.stopped_at[0].desired_location || {};
-            endLocation = summary.stopped_at[summary.stopped_at.length - 1].adjusted_location || summary.stopped_at[summary.stopped_at.length - 1].desired_location || {};
+          // For stops, try to use plan.waypoints if available; else fall back to start/end.
+          const waypoints = summary.plan?.waypoints;
+          let stopsHTML = "";
+          if (waypoints && waypoints.length > 0) {
+            stopsHTML = waypoints.map((wp, i) => `<p><strong>Stop ${i+1}:</strong> ${getStopText(wp)}</p>`).join('');
+          } else {
+            // Fallback: use trip_leg_summaries if available.
+            let startLocation = {};
+            let endLocation = {};
+            if (summary.trip_leg_summaries && summary.trip_leg_summaries.length > 0) {
+              const leg = summary.trip_leg_summaries[0];
+              startLocation = leg.pickup?.adjusted_location || leg.pickup?.desired_location || {};
+              endLocation = leg.dropoff?.adjusted_location || leg.dropoff?.desired_location || {};
+            } else if (summary.stopped_at && summary.stopped_at.length >= 2) {
+              startLocation = summary.stopped_at[0].adjusted_location || summary.stopped_at[0].desired_location || {};
+              endLocation = summary.stopped_at[1].adjusted_location || summary.stopped_at[1].desired_location || {};
+            }
+            stopsHTML = `<p><strong>Start Location:</strong> ${getLocationText(startLocation)}</p>
+                         <p><strong>End Location:</strong> ${getLocationText(endLocation)}</p>`;
           }
 
-          const startText = getLocationText(startLocation);
-          const endText = getLocationText(endLocation);
-
-          // Prepare pricing details from billing_data.
+          // Pricing details from billing_data.
           const billingData = summary.billing_data || {};
           const fareBreakdown = billingData.fare_breakdown || {};
           const grossCost = formatCost(fareBreakdown.gross_cost);
@@ -248,26 +265,8 @@
             promotionText = `${promo.title || ""} – ${promo.description || ""}`;
           }
 
-          // Build the stops information.
-          let stopsHTML = '';
-          if (tripData.intermediate_stops && tripData.intermediate_stops.length > 0) {
-            // If the JSON contains an "intermediate_stops" array, list them.
-            tripData.intermediate_stops.forEach((stop, index) => {
-              stopsHTML += `<p><strong>Stop ${index + 1}:</strong> ${getLocationText(stop)}</p>`;
-            });
-          } else if (summary.plan?.trip_legs && summary.plan.trip_legs.length > 1) {
-            // Otherwise, if the plan has more than one leg, list each leg's pickup and dropoff.
-            summary.plan.trip_legs.forEach((leg, index) => {
-              stopsHTML += `<p><strong>Leg ${index + 1} Pickup:</strong> ${getLocationText(leg.pickup?.desired_location)}</p>`;
-              stopsHTML += `<p><strong>Leg ${index + 1} Dropoff:</strong> ${getLocationText(leg.dropoff?.desired_location)}</p>`;
-            });
-          }
-
           const detailsDiv = document.createElement('div');
           detailsDiv.className = 'trip-details';
-
-          // Generate a unique map id.
-          const mapId = `map-${Math.random().toString(36).substring(2, 15)}`;
 
           detailsDiv.innerHTML = `
             <div class="detail-section">
@@ -278,9 +277,7 @@
               <p><strong>State:</strong> ${state}</p>
             </div>
             <div class="detail-section">
-              <h3>Trip Locations</h3>
-              <p><strong>Start Location:</strong> ${startText}</p>
-              <p><strong>End Location:</strong> ${endText}</p>
+              <h3>Trip Stops</h3>
               ${stopsHTML}
             </div>
             <div class="detail-section">
@@ -294,8 +291,10 @@
               ${chargeInfoText ? `<p><strong>Payment Method:</strong> ${chargeInfoText}</p>` : ''}
               ${promotionText ? `<p><strong>Promotion:</strong> ${promotionText}</p>` : ''}
             </div>
-            <div id="${mapId}" class="map"></div>
+            <div id="${'map-' + Math.random().toString(36).substring(2,15)}" class="map"></div>
           `;
+          // Create a unique map container id.
+          const mapId = detailsDiv.querySelector('.map').id;
 
           li.appendChild(detailsDiv);
 
@@ -305,22 +304,54 @@
             } else {
               detailsDiv.style.display = 'block';
               if (!detailsDiv.dataset.mapInitialized) {
-                const startLatLng = getLatLng(startLocation);
-                const endLatLng = getLatLng(endLocation);
-                const center = startLatLng || endLatLng || [0, 0];
+                // Build an array of map points.
+                let points = [];
+                if (waypoints && waypoints.length > 0) {
+                  points = waypoints
+                    .map(wp => getLatLng(wp.adjusted_location || wp.desired_location))
+                    .filter(p => p !== null);
+                } else {
+                  // Fallback: use start and end locations from trip_leg_summaries or stopped_at.
+                  let startLocation = {};
+                  let endLocation = {};
+                  if (summary.trip_leg_summaries && summary.trip_leg_summaries.length > 0) {
+                    const leg = summary.trip_leg_summaries[0];
+                    startLocation = leg.pickup?.adjusted_location || leg.pickup?.desired_location || {};
+                    endLocation = leg.dropoff?.adjusted_location || leg.dropoff?.desired_location || {};
+                  } else if (summary.stopped_at && summary.stopped_at.length >= 2) {
+                    startLocation = summary.stopped_at[0].adjusted_location || summary.stopped_at[0].desired_location || {};
+                    endLocation = summary.stopped_at[1].adjusted_location || summary.stopped_at[1].desired_location || {};
+                  }
+                  const s = getLatLng(startLocation);
+                  const e = getLatLng(endLocation);
+                  if (s) points.push(s);
+                  if (e) points.push(e);
+                }
+                const center = points.length > 0 ? points[0] : [0, 0];
                 const map = L.map(mapId).setView(center, 13);
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                  maxZoom: 19,
+                  maxZoom: 19
                 }).addTo(map);
-                if (startLatLng) {
-                  L.marker(startLatLng, { icon: greenIcon }).addTo(map).bindPopup('Start');
+
+                // For each stop, add a marker. Use green for first, red for last, blue for intermediate.
+                points.forEach((pt, i) => {
+                  let icon;
+                  if (i === 0) {
+                    icon = greenIcon;
+                  } else if (i === points.length - 1) {
+                    icon = redIcon;
+                  } else {
+                    icon = blueIcon;
+                  }
+                  // For the popup, if waypoints data exists, use the corresponding stop text.
+                  let popupText = waypoints && waypoints[i] ? `Stop ${i+1}: ${getStopText(waypoints[i])}` : `Stop ${i+1}`;
+                  L.marker(pt, { icon }).addTo(map).bindPopup(popupText);
+                });
+
+                if (points.length > 1) {
+                  L.polyline(points, { color: '#4caf50', weight: 3 }).addTo(map);
                 }
-                if (endLatLng) {
-                  L.marker(endLatLng, { icon: redIcon }).addTo(map).bindPopup('End');
-                }
-                if (startLatLng && endLatLng) {
-                  L.polyline([startLatLng, endLatLng], { color: '#4caf50', weight: 3 }).addTo(map);
-                }
+                // Invalidate the map size after a slight delay.
                 setTimeout(() => { map.invalidateSize(); }, 100);
                 detailsDiv.dataset.mapInitialized = "true";
               }
