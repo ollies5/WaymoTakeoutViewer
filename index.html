@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Waymo Trips Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg-color: #121212;
+      --text-color: #e0e0e0;
+      --card-bg: #1e1e1e;
+      --card-hover: #333;
+      --detail-bg: #2a2a2a;
+      --accent-color: #4caf50;
+      --border-color: #444;
+      --button-bg: #4caf50;
+      --button-hover: #45a049;
+    }
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    input[type="file"] {
+      display: block;
+      margin: 0 auto 20px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-color);
+      padding: 8px;
+      border-radius: 4px;
+    }
+    .trip-list {
+      list-style: none;
+      padding: 0;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .trip-item {
+      background: var(--card-bg);
+      margin-bottom: 10px;
+      border-radius: 4px;
+      padding: 15px;
+      cursor: pointer;
+      transition: background 0.3s;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    }
+    .trip-item:hover {
+      background: var(--card-hover);
+    }
+    .trip-item strong {
+      display: block;
+      font-size: 1.2em;
+      margin-bottom: 8px;
+    }
+    .summary {
+      font-size: 1em;
+      color: var(--accent-color);
+      margin-bottom: 10px;
+    }
+    .trip-details {
+      margin-top: 10px;
+      background: var(--detail-bg);
+      border-radius: 4px;
+      padding: 10px;
+      display: none;
+    }
+    .detail-section {
+      margin-bottom: 10px;
+    }
+    .detail-section h3 {
+      margin: 5px 0;
+      color: var(--accent-color);
+    }
+    .detail-section p {
+      margin: 3px 0;
+    }
+    .map {
+      height: 300px;
+      width: 100%;
+      border-radius: 4px;
+    }
+    .loading {
+      text-align: center;
+      font-size: 1.2em;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Waymo Trips Viewer</h1>
+  <input type="file" id="zipFileInput" accept=".zip" />
+  <ul id="tripList" class="trip-list"></ul>
+
+  <!-- JSZip and Leaflet JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script>
+    const zipFileInput = document.getElementById('zipFileInput');
+    const tripList = document.getElementById('tripList');
+
+    // Convert a location object with { lat_lng: {lat_e7, lng_e7} } into [lat, lng]
+    function getLatLng(loc) {
+      if (loc && loc.lat_lng && typeof loc.lat_lng.lat_e7 === 'number' && typeof loc.lat_lng.lng_e7 === 'number') {
+        return [ loc.lat_lng.lat_e7 / 1e7, loc.lat_lng.lng_e7 / 1e7 ];
+      }
+      return null;
+    }
+
+    // Get a text description for a location. If a description name exists, return it;
+    // else, if location_detail array exists, join its elements;
+    // else return "Unknown address".
+    function getLocationText(loc) {
+      if (loc && loc.description) {
+        if (loc.description.name && loc.description.name.trim() !== "") {
+          return loc.description.name;
+        } else if (loc.description.location_detail && loc.description.location_detail.length > 0) {
+          return loc.description.location_detail.join(', ');
+        }
+      }
+      return "Unknown address";
+    }
+
+    // Format a cost object (with either amount or units+nanos)
+    function formatCost(costObj) {
+      if (!costObj) return "N/A";
+      if (costObj.amount !== undefined) {
+        return `${costObj.currency_code || ""} ${costObj.amount}`;
+      }
+      if (costObj.units !== undefined) {
+        return `${costObj.currency_code || ""} ${costObj.units}.${costObj.nanos || "0"}`;
+      }
+      return "N/A";
+    }
+
+    zipFileInput.addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      tripList.innerHTML = '<li class="loading">Loading trips...</li>';
+
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        const tripsFolder = zip.folder('trips');
+        if (!tripsFolder) {
+          tripList.innerHTML = '<li class="loading">No "trips" folder found in the zip file.</li>';
+          return;
+        }
+
+        const tripFiles = [];
+        tripsFolder.forEach((relativePath, fileEntry) => {
+          if (!fileEntry.dir && relativePath.toLowerCase().endsWith('.json')) {
+            tripFiles.push({ path: relativePath, file: fileEntry });
+          }
+        });
+
+        if (tripFiles.length === 0) {
+          tripList.innerHTML = '<li class="loading">No JSON trip files found in the trips folder.</li>';
+          return;
+        }
+
+        tripList.innerHTML = '';
+
+        // Custom marker icons: green for start, red for end.
+        const greenIcon = new L.Icon({
+          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+          iconSize: [25, 41],
+          iconAnchor: [12, 41],
+          popupAnchor: [1, -34],
+          shadowSize: [41, 41]
+        });
+        const redIcon = new L.Icon({
+          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+          iconSize: [25, 41],
+          iconAnchor: [12, 41],
+          popupAnchor: [1, -34],
+          shadowSize: [41, 41]
+        });
+
+        for (const tripFile of tripFiles) {
+          const content = await tripFile.file.async("string");
+          let tripData;
+          try {
+            tripData = JSON.parse(content);
+          } catch (err) {
+            console.error("Error parsing JSON in " + tripFile.path, err);
+            continue;
+          }
+
+          const li = document.createElement('li');
+          li.className = 'trip-item';
+
+          // Extract basic summary info from derived.trip_summary
+          const summary = tripData.derived?.trip_summary || {};
+          const basics = summary.basics || {};
+          const created = basics.creation_time ? new Date(parseInt(basics.creation_time.seconds) * 1000).toLocaleString() : "Unknown address";
+          const duration = basics.duration ? (basics.duration.seconds / 60).toFixed(2) + " mins" : "N/A";
+          const distance = basics.distance_m ? (basics.distance_m * 0.000621371).toFixed(2) + " miles" : "N/A";
+          const state = summary.state || "N/A";
+          const summaryText = `Created: ${created} | Duration: ${duration} | Distance: ${distance} | State: ${state}`;
+
+          li.innerHTML = `<strong>${tripFile.path}</strong><div class="summary">${summaryText}</div>`;
+
+          // For multi-stop trips, use the first leg's pickup as start and last leg's dropoff as end.
+          let startLocation = {};
+          let endLocation = {};
+          if (summary.trip_leg_summaries && summary.trip_leg_summaries.length > 0) {
+            startLocation = summary.trip_leg_summaries[0].pickup?.adjusted_location 
+                            || summary.trip_leg_summaries[0].pickup?.desired_location || {};
+            endLocation = summary.trip_leg_summaries[summary.trip_leg_summaries.length - 1].dropoff?.adjusted_location 
+                          || summary.trip_leg_summaries[summary.trip_leg_summaries.length - 1].dropoff?.desired_location || {};
+          } else if (summary.stopped_at && summary.stopped_at.length >= 2) {
+            startLocation = summary.stopped_at[0].adjusted_location || summary.stopped_at[0].desired_location || {};
+            endLocation = summary.stopped_at[summary.stopped_at.length - 1].adjusted_location || summary.stopped_at[summary.stopped_at.length - 1].desired_location || {};
+          }
+
+          const startText = getLocationText(startLocation);
+          const endText = getLocationText(endLocation);
+
+          // Prepare pricing details from billing_data.
+          const billingData = summary.billing_data || {};
+          const fareBreakdown = billingData.fare_breakdown || {};
+          const grossCost = formatCost(fareBreakdown.gross_cost);
+          const discountApplied = formatCost(fareBreakdown.discount_applied);
+          const costAfterDiscount = formatCost(fareBreakdown.cost_after_discount);
+          const taxTotal = formatCost(fareBreakdown.tax_total);
+          const surchargeTotal = formatCost(fareBreakdown.surcharge_total);
+          const finalTripCost = formatCost(fareBreakdown.final_trip_cost);
+          let chargeInfoText = "";
+          if (billingData.charge_info && billingData.charge_info.payment_method && billingData.charge_info.payment_method.credit_card_info) {
+            const cc = billingData.charge_info.payment_method.credit_card_info;
+            chargeInfoText = `${cc.scheme || ""} ending in ${cc.last_four || ""}`;
+          }
+          let promotionText = "";
+          if (billingData.promotion_applied && billingData.promotion_applied.description) {
+            const promo = billingData.promotion_applied.description;
+            promotionText = `${promo.title || ""} – ${promo.description || ""}`;
+          }
+
+          // Build the stops information.
+          let stopsHTML = '';
+          if (tripData.intermediate_stops && tripData.intermediate_stops.length > 0) {
+            // If the JSON contains an "intermediate_stops" array, list them.
+            tripData.intermediate_stops.forEach((stop, index) => {
+              stopsHTML += `<p><strong>Stop ${index + 1}:</strong> ${getLocationText(stop)}</p>`;
+            });
+          } else if (summary.plan?.trip_legs && summary.plan.trip_legs.length > 1) {
+            // Otherwise, if the plan has more than one leg, list each leg's pickup and dropoff.
+            summary.plan.trip_legs.forEach((leg, index) => {
+              stopsHTML += `<p><strong>Leg ${index + 1} Pickup:</strong> ${getLocationText(leg.pickup?.desired_location)}</p>`;
+              stopsHTML += `<p><strong>Leg ${index + 1} Dropoff:</strong> ${getLocationText(leg.dropoff?.desired_location)}</p>`;
+            });
+          }
+
+          const detailsDiv = document.createElement('div');
+          detailsDiv.className = 'trip-details';
+
+          // Generate a unique map id.
+          const mapId = `map-${Math.random().toString(36).substring(2, 15)}`;
+
+          detailsDiv.innerHTML = `
+            <div class="detail-section">
+              <h3>Trip Basics</h3>
+              <p><strong>Created:</strong> ${created}</p>
+              <p><strong>Duration:</strong> ${duration}</p>
+              <p><strong>Distance:</strong> ${distance}</p>
+              <p><strong>State:</strong> ${state}</p>
+            </div>
+            <div class="detail-section">
+              <h3>Trip Locations</h3>
+              <p><strong>Start Location:</strong> ${startText}</p>
+              <p><strong>End Location:</strong> ${endText}</p>
+              ${stopsHTML}
+            </div>
+            <div class="detail-section">
+              <h3>Pricing</h3>
+              <p><strong>Gross Cost:</strong> ${grossCost}</p>
+              <p><strong>Discount Applied:</strong> ${discountApplied}</p>
+              <p><strong>Cost After Discount:</strong> ${costAfterDiscount}</p>
+              <p><strong>Tax Total:</strong> ${taxTotal}</p>
+              <p><strong>Surcharge Total:</strong> ${surchargeTotal}</p>
+              <p><strong>Final Trip Cost:</strong> ${finalTripCost}</p>
+              ${chargeInfoText ? `<p><strong>Payment Method:</strong> ${chargeInfoText}</p>` : ''}
+              ${promotionText ? `<p><strong>Promotion:</strong> ${promotionText}</p>` : ''}
+            </div>
+            <div id="${mapId}" class="map"></div>
+          `;
+
+          li.appendChild(detailsDiv);
+
+          li.addEventListener('click', () => {
+            if (detailsDiv.style.display === 'block') {
+              detailsDiv.style.display = 'none';
+            } else {
+              detailsDiv.style.display = 'block';
+              if (!detailsDiv.dataset.mapInitialized) {
+                const startLatLng = getLatLng(startLocation);
+                const endLatLng = getLatLng(endLocation);
+                const center = startLatLng || endLatLng || [0, 0];
+                const map = L.map(mapId).setView(center, 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                  maxZoom: 19,
+                }).addTo(map);
+                if (startLatLng) {
+                  L.marker(startLatLng, { icon: greenIcon }).addTo(map).bindPopup('Start');
+                }
+                if (endLatLng) {
+                  L.marker(endLatLng, { icon: redIcon }).addTo(map).bindPopup('End');
+                }
+                if (startLatLng && endLatLng) {
+                  L.polyline([startLatLng, endLatLng], { color: '#4caf50', weight: 3 }).addTo(map);
+                }
+                setTimeout(() => { map.invalidateSize(); }, 100);
+                detailsDiv.dataset.mapInitialized = "true";
+              }
+            }
+          });
+
+          tripList.appendChild(li);
+        }
+      } catch (error) {
+        console.error("Error processing zip file", error);
+        tripList.innerHTML = '<li class="loading">Error processing zip file. See console for details.</li>';
+      }
+    });
+  </script>
+</body>
+</html>
