@@ -1,6 +1,8 @@
 # WaymoTakeoutViewer
 Requested your data from Waymo? You can use this web app to view it all in an easily digestable format.
 
+![Screenshot of App](https://s3.us-west-000.backblazeb2.com/ollie-cdn/LDBHq26KAJQ9.jpg)
+
 **This is a work in progress! Some things are definitely broken.**
 
 Some things that don't really work right now:
