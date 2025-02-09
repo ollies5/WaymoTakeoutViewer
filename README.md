@@ -7,6 +7,8 @@ Some things that don't really work right now:
 - Multi stop trips
 - The UI in general (although recently improved!)
 
+This web app is designed to be easy to use - just a single file to download that's ready to go.
+
 ## Usage
 1) Download `index.html` and open it up in your chosen web browser
 2) Upload your archive with the takeout data (everything stays local and is processed on your device)
