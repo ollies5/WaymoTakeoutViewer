@@ -5,9 +5,10 @@ Requested your data from Waymo? You can use this web app to view it all in an ea
 
 **This is a work in progress! Some things are definitely broken.**
 
-Some things that don't really work right now:
-- Multi stop trips
-- The UI in general (although recently improved!)
+Roadmap:
+- Multi stop trips actually working
+- A better way to seperate each trip since some are bunched together in a single .json file
+- A lifetime stats page with things like total spent, longest trip etc.
 
 This web app is designed to be easy to use - just a single file to download that's ready to go.
 
