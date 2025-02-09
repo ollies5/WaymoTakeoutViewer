@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Waymo Trips Viewer</title>
+  <title>Waymo Takeout Viewer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
@@ -10,13 +10,17 @@
     :root {
       --bg-color: #121212;
       --text-color: #e0e0e0;
-      --card-bg: #1e1e1e;
-      --card-hover: #333;
-      --detail-bg: #2a2a2a;
-      --accent-color: #4caf50;
-      --border-color: #444;
-      --button-bg: #4caf50;
-      --button-hover: #45a049;
+      /* Card backgrounds using gradients */
+      --card-bg: #1f1f2e;
+      --card-hover: #2c2c3a;
+      --detail-bg: #1f1f2e;
+      /* Accent colours: primary green and secondary blue; end stop uses red */
+      --accent-color: #00E89D;
+      --secondary-accent: #0077FF;
+      --end-border: #FF3B30;
+      --border-color: #2e2e3d;
+      --button-bg: #00E89D;
+      --button-hover: #00C07A;
     }
     body {
       background-color: var(--bg-color);
@@ -24,69 +28,126 @@
       font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
       margin: 0;
       padding: 20px;
+      height: 100vh;
+      box-sizing: border-box;
     }
     h1 {
       text-align: center;
       margin-bottom: 20px;
+      font-weight: 600;
     }
     input[type="file"] {
       display: block;
-      margin: 0 auto 20px;
+      margin: 0 auto 20px auto;
       background: var(--card-bg);
       border: 1px solid var(--border-color);
       color: var(--text-color);
-      padding: 8px;
-      border-radius: 4px;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 1em;
+    }
+    /* Hide main container until a file is loaded */
+    #container {
+      display: none;
+      flex-direction: row;
+      height: calc(100% - 60px);
+    }
+    #sidebar {
+      width: 300px;
+      background: linear-gradient(135deg, #1f1f2e, #2c2c3a);
+      border-radius: 8px;
+      padding: 15px;
+      margin-right: 10px;
+      overflow-y: auto;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.7);
+    }
+    #detailsPane {
+      flex: 1;
+      background: linear-gradient(135deg, #1f1f2e, #2c2c3a);
+      border-radius: 8px;
+      padding: 15px;
+      overflow-y: auto;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.7);
     }
     .trip-list {
       list-style: none;
       padding: 0;
-      max-width: 800px;
-      margin: 0 auto;
+      margin: 0;
     }
     .trip-item {
-      background: var(--card-bg);
+      background: linear-gradient(135deg, var(--card-bg), var(--card-hover));
       margin-bottom: 10px;
-      border-radius: 4px;
+      border-radius: 8px;
       padding: 15px;
       cursor: pointer;
-      transition: background 0.3s;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+      transition: background 0.3s, transform 0.3s;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.6);
+    }
+    .trip-item.active {
+      background: linear-gradient(135deg, var(--card-hover), #37374a);
+      transform: translateY(-2px);
     }
     .trip-item:hover {
-      background: var(--card-hover);
+      background: linear-gradient(135deg, var(--card-hover), #37374a);
     }
     .trip-item strong {
       display: block;
-      font-size: 1.2em;
-      margin-bottom: 8px;
+      font-size: 1.1em;
+      margin-bottom: 4px;
     }
     .summary {
-      font-size: 1em;
-      color: var(--accent-color);
-      margin-bottom: 10px;
+      font-size: 0.9em;
+      margin-top: 5px;
+      line-height: 1.4;
     }
-    .trip-details {
-      margin-top: 10px;
-      background: var(--detail-bg);
-      border-radius: 4px;
-      padding: 10px;
-      display: none;
+    /* Badge for state */
+    .state-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 20px;
+      font-size: 0.85em;
+      color: var(--text-color);
+      margin-left: 8px;
     }
-    .detail-section {
-      margin-bottom: 10px;
+    /* Grid layout for details pane */
+    .details-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 15px;
     }
-    .detail-section h3 {
+    .details-box {
+      background: linear-gradient(135deg, var(--detail-bg), var(--card-hover));
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.6);
+      flex: 1;
+      min-width: 250px;
+    }
+    .details-box h3 {
       margin: 5px 0;
       color: var(--accent-color);
     }
-    .detail-section p {
+    .details-box p {
+      margin: 3px 0;
+    }
+    /* Stop boxes for each trip stop */
+    .stop-box {
+      background: linear-gradient(135deg, var(--detail-bg), var(--card-hover));
+      padding: 10px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    }
+    .stop-box p {
       margin: 3px 0;
     }
     .map {
       height: 300px;
       width: 100%;
-      border-radius: 4px;
+      border-radius: 8px;
+      margin-top: 15px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.6);
     }
     .loading {
       text-align: center;
@@ -96,18 +157,53 @@
   </style>
 </head>
 <body>
-  <h1>Waymo Trips Viewer</h1>
+  <h1>Waymo Takeout Viewer</h1>
   <input type="file" id="zipFileInput" accept=".zip" />
-  <ul id="tripList" class="trip-list"></ul>
+  <div id="container">
+    <div id="sidebar">
+      <ul id="tripList" class="trip-list"></ul>
+    </div>
+    <div id="detailsPane">
+      <div class="loading">Select a trip from the sidebar</div>
+    </div>
+  </div>
 
-  <!-- JSZip and Leaflet JS -->
+  <!-- Include JSZip and Leaflet -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
   <script>
     const zipFileInput = document.getElementById('zipFileInput');
     const tripList = document.getElementById('tripList');
+    const detailsPane = document.getElementById('detailsPane');
+    const container = document.getElementById('container');
 
-    // Given a location object with a lat_lng property (in E7), return [lat, lng] in degrees.
+    // Define custom marker icons
+    const greenIcon = new L.Icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+    const redIcon = new L.Icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+    const blueIcon = new L.Icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+
+    // Helper functions
     function getLatLng(loc) {
       if (loc && loc.lat_lng && typeof loc.lat_lng.lat_e7 === 'number' && typeof loc.lat_lng.lng_e7 === 'number') {
         return [loc.lat_lng.lat_e7 / 1e7, loc.lat_lng.lng_e7 / 1e7];
@@ -115,7 +211,6 @@
       return null;
     }
 
-    // Given an object that contains a description (e.g. desired_location or adjusted_location), return its text.
     function getLocationText(loc) {
       if (loc && loc.description) {
         if (loc.description.name && loc.description.name.trim() !== "") {
@@ -127,30 +222,84 @@
       return "Unknown address";
     }
 
-    // For a waypoint (which has adjusted_location and desired_location), return the best location text.
-    function getStopText(waypoint) {
-      const loc = waypoint.adjusted_location || waypoint.desired_location || {};
-      return getLocationText(loc);
-    }
-
-    // Helper to format cost objects.
     function formatCost(costObj) {
-      if (!costObj) return "N/A";
+      if (!costObj) return "";
       if (costObj.amount !== undefined) {
         return `${costObj.currency_code || ""} ${costObj.amount}`;
       }
       if (costObj.units !== undefined) {
         return `${costObj.currency_code || ""} ${costObj.units}.${costObj.nanos || "0"}`;
       }
-      return "N/A";
+      return "";
+    }
+
+    // Initialize the map: add markers, a connecting gradient polyline, and adjust bounds.
+    function initializeMap(mapId, points, stopTexts) {
+      const map = L.map(mapId).setView([0, 0], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+      }).addTo(map);
+
+      // Add markers for each stop.
+      points.forEach((pt, i) => {
+        let icon = (i === 0) ? greenIcon : (i === points.length - 1 ? redIcon : blueIcon);
+        let popupText = stopTexts && stopTexts[i] ? (i === 0 ? `Start: ${stopTexts[i]}` : i === points.length - 1 ? `End: ${stopTexts[i]}` : `Stop ${i+1}: ${stopTexts[i]}`) : `Stop ${i+1}`;
+        L.marker(pt, { icon }).addTo(map).bindPopup(popupText);
+      });
+
+      // Create a polyline connecting all points.
+      let polyline = L.polyline(points, { weight: 3 }).addTo(map);
+      
+      // Add a gradient stroke to the polyline.
+      setTimeout(() => {
+        const renderer = map.getRenderer(polyline);
+        if (renderer instanceof L.SVG) {
+          const svg = renderer._container;
+          let defs = svg.querySelector("defs");
+          if (!defs) {
+            defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+            svg.insertBefore(defs, svg.firstChild);
+          }
+          const gradientId = "gradient-" + Math.random().toString(36).substring(2,15);
+          const gradient = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
+          gradient.setAttribute("id", gradientId);
+          gradient.setAttribute("gradientUnits", "userSpaceOnUse");
+          // Compute the layer points for the first and last coordinates.
+          const firstPoint = map.latLngToLayerPoint(points[0]);
+          const lastPoint = map.latLngToLayerPoint(points[points.length - 1]);
+          gradient.setAttribute("x1", firstPoint.x);
+          gradient.setAttribute("y1", firstPoint.y);
+          gradient.setAttribute("x2", lastPoint.x);
+          gradient.setAttribute("y2", lastPoint.y);
+          // Create gradient stops.
+          const stop1 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+          stop1.setAttribute("offset", "0%");
+          stop1.setAttribute("stop-color", "#00E89D"); // green accent
+          gradient.appendChild(stop1);
+          const stop2 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+          stop2.setAttribute("offset", "100%");
+          stop2.setAttribute("stop-color", "#0077FF"); // blue accent
+          gradient.appendChild(stop2);
+          defs.appendChild(gradient);
+          // Set the polyline stroke to use the gradient.
+          polyline._path.setAttribute("stroke", "url(#" + gradientId + ")");
+        }
+      }, 0);
+      
+      // Fit map to markers.
+      if (points.length > 1) {
+        const bounds = L.latLngBounds(points);
+        map.fitBounds(bounds, { padding: [20, 20] });
+      } else if (points.length === 1) {
+        map.setView(points[0], 13);
+      }
+      setTimeout(() => { map.invalidateSize(); }, 100);
     }
 
     zipFileInput.addEventListener('change', async (event) => {
       const file = event.target.files[0];
       if (!file) return;
-
       tripList.innerHTML = '<li class="loading">Loading trips...</li>';
-
       try {
         const arrayBuffer = await file.arrayBuffer();
         const zip = await JSZip.loadAsync(arrayBuffer);
@@ -159,47 +308,19 @@
           tripList.innerHTML = '<li class="loading">No "trips" folder found in the zip file.</li>';
           return;
         }
-
         const tripFiles = [];
         tripsFolder.forEach((relativePath, fileEntry) => {
           if (!fileEntry.dir && relativePath.toLowerCase().endsWith('.json')) {
             tripFiles.push({ path: relativePath, file: fileEntry });
           }
         });
-
         if (tripFiles.length === 0) {
           tripList.innerHTML = '<li class="loading">No JSON trip files found in the trips folder.</li>';
           return;
         }
-
+        // Show the container once trips are loaded.
+        container.style.display = 'flex';
         tripList.innerHTML = '';
-
-        // Define custom marker icons.
-        const greenIcon = new L.Icon({
-          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-          iconSize: [25, 41],
-          iconAnchor: [12, 41],
-          popupAnchor: [1, -34],
-          shadowSize: [41, 41]
-        });
-        const redIcon = new L.Icon({
-          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-          iconSize: [25, 41],
-          iconAnchor: [12, 41],
-          popupAnchor: [1, -34],
-          shadowSize: [41, 41]
-        });
-        const blueIcon = new L.Icon({
-          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-          iconSize: [25, 41],
-          iconAnchor: [12, 41],
-          popupAnchor: [1, -34],
-          shadowSize: [41, 41]
-        });
-
         for (const tripFile of tripFiles) {
           const content = await tripFile.file.async("string");
           let tripData;
@@ -209,30 +330,56 @@
             console.error("Error parsing JSON in " + tripFile.path, err);
             continue;
           }
-
-          const li = document.createElement('li');
-          li.className = 'trip-item';
-
-          // Use derived.trip_summary for basic info.
           const summary = tripData.derived?.trip_summary || {};
           const basics = summary.basics || {};
           const created = basics.creation_time ? new Date(parseInt(basics.creation_time.seconds) * 1000).toLocaleString() : "Unknown";
           const duration = basics.duration ? (basics.duration.seconds / 60).toFixed(2) + " mins" : "N/A";
           const distance = basics.distance_m ? (basics.distance_m * 0.000621371).toFixed(2) + " miles" : "N/A";
           const state = summary.state || "N/A";
-          const summaryText = `Created: ${created} | Duration: ${duration} | Distance: ${distance} | State: ${state}`;
-
-          li.innerHTML = `<strong>${tripFile.path}</strong><div class="summary">${summaryText}</div>`;
-
-          // For stops, try to use plan.waypoints if available; else fall back to start/end.
+          // Format state as sentence case.
+          const formattedState = state.toLowerCase().charAt(0).toUpperCase() + state.toLowerCase().slice(1);
+          let badgeColor = "";
+          if (formattedState === "Completed") {
+            badgeColor = "var(--accent-color)";
+          } else if (formattedState === "Cancelled") {
+            badgeColor = "var(--secondary-accent)";
+          } else {
+            badgeColor = "var(--border-color)";
+          }
+          // Build sidebar summary header: minimal, without labels.
+          let sidebarSummaryHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>${created}</div>
+              <div><span class="state-badge" style="background: ${badgeColor};">${formattedState}</span></div>
+            </div>`;
+          if (formattedState !== "Cancelled") {
+            sidebarSummaryHTML += `<div>${duration} | ${distance}</div>`;
+          }
+          
+          const li = document.createElement('li');
+          li.className = 'trip-item';
+          li.innerHTML = `<strong>${tripFile.path}</strong><div class="summary">${sidebarSummaryHTML}</div>`;
+          
+          // Determine stops from plan waypoints if available; otherwise fallback.
           const waypoints = summary.plan?.waypoints;
           let stopsHTML = "";
+          let stopTexts = [];
+          let points = [];
           if (waypoints && waypoints.length > 0) {
-            stopsHTML = waypoints.map((wp, i) => `<p><strong>Stop ${i+1}:</strong> ${getStopText(wp)}</p>`).join('');
+            stopsHTML = waypoints.map((wp, i) => {
+              const txt = getLocationText(wp.adjusted_location || wp.desired_location);
+              stopTexts.push(txt);
+              const pt = getLatLng(wp.adjusted_location || wp.desired_location);
+              if (pt) points.push(pt);
+              // First stop: green border; Last stop: red border; Others: default border.
+              let borderColor = (i === 0) ? 'var(--accent-color)' : (i === waypoints.length - 1 ? 'var(--end-border)' : 'var(--border-color)');
+              return `<div class="stop-box" style="border: 2px solid ${borderColor};">
+                        <p><strong>${i === 0 ? "Start" : (i === waypoints.length - 1 ? "End" : "Stop " + (i+1))}:</strong> ${txt}</p>
+                      </div>`;
+            }).join('');
           } else {
-            // Fallback: use trip_leg_summaries if available.
-            let startLocation = {};
-            let endLocation = {};
+            // Fallback: use trip_leg_summaries or stopped_at.
+            let startLocation = {}, endLocation = {};
             if (summary.trip_leg_summaries && summary.trip_leg_summaries.length > 0) {
               const leg = summary.trip_leg_summaries[0];
               startLocation = leg.pickup?.adjusted_location || leg.pickup?.desired_location || {};
@@ -241,11 +388,22 @@
               startLocation = summary.stopped_at[0].adjusted_location || summary.stopped_at[0].desired_location || {};
               endLocation = summary.stopped_at[1].adjusted_location || summary.stopped_at[1].desired_location || {};
             }
-            stopsHTML = `<p><strong>Start Location:</strong> ${getLocationText(startLocation)}</p>
-                         <p><strong>End Location:</strong> ${getLocationText(endLocation)}</p>`;
+            const startText = getLocationText(startLocation);
+            const endText = getLocationText(endLocation);
+            stopsHTML = `<div class="stop-box" style="border: 2px solid var(--accent-color);">
+                          <p><strong>Start:</strong> ${startText}</p>
+                         </div>
+                         <div class="stop-box" style="border: 2px solid var(--end-border);">
+                          <p><strong>End:</strong> ${endText}</p>
+                         </div>`;
+            stopTexts = [startText, endText];
+            const s = getLatLng(startLocation);
+            const e = getLatLng(endLocation);
+            if (s) points.push(s);
+            if (e) points.push(e);
           }
 
-          // Pricing details from billing_data.
+          // Pricing details
           const billingData = summary.billing_data || {};
           const fareBreakdown = billingData.fare_breakdown || {};
           const grossCost = formatCost(fareBreakdown.gross_cost);
@@ -264,98 +422,45 @@
             const promo = billingData.promotion_applied.description;
             promotionText = `${promo.title || ""} – ${promo.description || ""}`;
           }
-
-          const detailsDiv = document.createElement('div');
-          detailsDiv.className = 'trip-details';
-
-          detailsDiv.innerHTML = `
-            <div class="detail-section">
-              <h3>Trip Basics</h3>
-              <p><strong>Created:</strong> ${created}</p>
-              <p><strong>Duration:</strong> ${duration}</p>
-              <p><strong>Distance:</strong> ${distance}</p>
-              <p><strong>State:</strong> ${state}</p>
+          // Build the details pane HTML with labels for each field.
+          const mapId = 'map-' + Math.random().toString(36).substring(2,15);
+          const detailsHTML = `
+            <div class="details-grid">
+              <div class="details-box">
+                <h3>Trip Basics</h3>
+                <p><strong>Created:</strong> ${created}</p>
+                ${formattedState !== "Cancelled" ? `<p><strong>Duration:</strong> ${duration} &nbsp; | &nbsp; <strong>Distance:</strong> ${distance}</p>` : ""}
+                <p><strong>State:</strong> <span class="state-badge" style="background: ${badgeColor};">${formattedState}</span></p>
+              </div>
+              <div class="details-box">
+                <h3>Trip Stops</h3>
+                ${stopsHTML}
+              </div>
+              <div class="details-box">
+                <h3>Pricing</h3>
+                <p><strong>Gross Cost:</strong> ${grossCost}</p>
+                <p><strong>Discount Applied:</strong> ${discountApplied}</p>
+                <p><strong>Cost After Discount:</strong> ${costAfterDiscount}</p>
+                <p><strong>Tax Total:</strong> ${taxTotal}</p>
+                <p><strong>Surcharge Total:</strong> ${surchargeTotal}</p>
+                <p><strong>Final Trip Cost:</strong> ${finalTripCost}</p>
+                ${chargeInfoText ? `<p><strong>Payment Method:</strong> ${chargeInfoText}</p>` : ''}
+                ${promotionText ? `<p><strong>Promotion:</strong> ${promotionText}</p>` : ''}
+              </div>
             </div>
-            <div class="detail-section">
-              <h3>Trip Stops</h3>
-              ${stopsHTML}
-            </div>
-            <div class="detail-section">
-              <h3>Pricing</h3>
-              <p><strong>Gross Cost:</strong> ${grossCost}</p>
-              <p><strong>Discount Applied:</strong> ${discountApplied}</p>
-              <p><strong>Cost After Discount:</strong> ${costAfterDiscount}</p>
-              <p><strong>Tax Total:</strong> ${taxTotal}</p>
-              <p><strong>Surcharge Total:</strong> ${surchargeTotal}</p>
-              <p><strong>Final Trip Cost:</strong> ${finalTripCost}</p>
-              ${chargeInfoText ? `<p><strong>Payment Method:</strong> ${chargeInfoText}</p>` : ''}
-              ${promotionText ? `<p><strong>Promotion:</strong> ${promotionText}</p>` : ''}
-            </div>
-            <div id="${'map-' + Math.random().toString(36).substring(2,15)}" class="map"></div>
+            <div id="${mapId}" class="map"></div>
           `;
-          // Create a unique map container id.
-          const mapId = detailsDiv.querySelector('.map').id;
 
-          li.appendChild(detailsDiv);
+          li.detailsHTML = detailsHTML;
+          li.mapId = mapId;
+          li.mapPoints = points;
+          li.stopTexts = stopTexts;
 
           li.addEventListener('click', () => {
-            if (detailsDiv.style.display === 'block') {
-              detailsDiv.style.display = 'none';
-            } else {
-              detailsDiv.style.display = 'block';
-              if (!detailsDiv.dataset.mapInitialized) {
-                // Build an array of map points.
-                let points = [];
-                if (waypoints && waypoints.length > 0) {
-                  points = waypoints
-                    .map(wp => getLatLng(wp.adjusted_location || wp.desired_location))
-                    .filter(p => p !== null);
-                } else {
-                  // Fallback: use start and end locations from trip_leg_summaries or stopped_at.
-                  let startLocation = {};
-                  let endLocation = {};
-                  if (summary.trip_leg_summaries && summary.trip_leg_summaries.length > 0) {
-                    const leg = summary.trip_leg_summaries[0];
-                    startLocation = leg.pickup?.adjusted_location || leg.pickup?.desired_location || {};
-                    endLocation = leg.dropoff?.adjusted_location || leg.dropoff?.desired_location || {};
-                  } else if (summary.stopped_at && summary.stopped_at.length >= 2) {
-                    startLocation = summary.stopped_at[0].adjusted_location || summary.stopped_at[0].desired_location || {};
-                    endLocation = summary.stopped_at[1].adjusted_location || summary.stopped_at[1].desired_location || {};
-                  }
-                  const s = getLatLng(startLocation);
-                  const e = getLatLng(endLocation);
-                  if (s) points.push(s);
-                  if (e) points.push(e);
-                }
-                const center = points.length > 0 ? points[0] : [0, 0];
-                const map = L.map(mapId).setView(center, 13);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                  maxZoom: 19
-                }).addTo(map);
-
-                // For each stop, add a marker. Use green for first, red for last, blue for intermediate.
-                points.forEach((pt, i) => {
-                  let icon;
-                  if (i === 0) {
-                    icon = greenIcon;
-                  } else if (i === points.length - 1) {
-                    icon = redIcon;
-                  } else {
-                    icon = blueIcon;
-                  }
-                  // For the popup, if waypoints data exists, use the corresponding stop text.
-                  let popupText = waypoints && waypoints[i] ? `Stop ${i+1}: ${getStopText(waypoints[i])}` : `Stop ${i+1}`;
-                  L.marker(pt, { icon }).addTo(map).bindPopup(popupText);
-                });
-
-                if (points.length > 1) {
-                  L.polyline(points, { color: '#4caf50', weight: 3 }).addTo(map);
-                }
-                // Invalidate the map size after a slight delay.
-                setTimeout(() => { map.invalidateSize(); }, 100);
-                detailsDiv.dataset.mapInitialized = "true";
-              }
-            }
+            document.querySelectorAll('#tripList .trip-item').forEach(item => item.classList.remove('active'));
+            li.classList.add('active');
+            detailsPane.innerHTML = li.detailsHTML;
+            initializeMap(li.mapId, li.mapPoints, li.stopTexts);
           });
 
           tripList.appendChild(li);
