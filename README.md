@@ -17,5 +17,6 @@ This web app is designed to be easy to use - just a single file to download that
 ## Usage
 1) Download `index.html` and open it up in your chosen web browser
 2) Upload your archive with the takeout data (everything stays local and is processed on your device)
+
    **NOTE**: Waymo Takeouts tend to get sent over in a corrupted .zip. This will need to be rezipped before upload. Just extract it, zip it up again, making sure to keep the file structure the same.
 4) Voila! Take a look at all your trips!
